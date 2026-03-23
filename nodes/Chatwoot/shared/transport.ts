@@ -209,6 +209,13 @@ export function getKanbanTaskId(this: IExecuteFunctions | ILoadOptionsFunctions,
 }
 
 /**
+ * Helper to get kanban item ID from parameters (handles resourceLocator)
+ */
+export function getKanbanItemId(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
+	return getResourceId.call(this, itemIndex, 'kanbanItemId');
+}
+
+/**
  * Helper to get the message ID from parameters (handles resourceLocator)
  */
 export function getMessageId(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
@@ -227,4 +234,32 @@ export function getScheduledMessageId(this: IExecuteFunctions | ILoadOptionsFunc
  */
 export function getTemplateName(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
 	return getResourceId.call(this, itemIndex, 'templateName');
+}
+
+/**
+ * Helper to get the canned response ID from parameters (handles resourceLocator)
+ */
+export function getCannedResponseId(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
+	return getResourceId.call(this, itemIndex, 'cannedResponseId');
+}
+
+/**
+ * Helper to get the automation ID from parameters (handles resourceLocator)
+ */
+export function getAutomationId(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
+	return getResourceId.call(this, itemIndex, 'automationId');
+}
+
+/**
+ * Helper to get the portal slug from parameters (handles resourceLocator with string mode)
+ */
+export function getPortalSlug(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
+	return getResourceId.call(this, itemIndex, 'portalSlug');
+}
+
+/**
+ * Helper to get the article ID from parameters
+ */
+export function getArticleId(this: IExecuteFunctions | ILoadOptionsFunctions, itemIndex: number): string {
+	return getResourceId.call(this, itemIndex, 'articleId');
 }

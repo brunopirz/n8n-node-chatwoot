@@ -104,6 +104,13 @@ export interface ChatwootKanbanStep {
   cancelled: boolean;
 }
 
+export interface ChatwootKanbanItem {
+	id: number;
+	conversation_id: number;
+	kanban_step_id: number;
+	position?: number;
+}
+
 export interface ChatwootKanbanTask {
   id: number;
   title: string;
@@ -144,6 +151,12 @@ export interface ChatwootCustomAttributeDefinition {
 	attribute_display_type: string;
 	attribute_description: string;
 	attribute_model: number;
+}
+
+export interface ChatwootPortal {
+	id: number;
+	name: string;
+	slug: string;
 }
 
 export interface ChatwootAttachment {

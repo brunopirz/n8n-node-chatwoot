@@ -16,6 +16,10 @@ export async function executeAgentOperation(
 			return listAgents(context, itemIndex);
 		case 'update':
 			return updateAgent(context, itemIndex);
+		case 'getAvailability':
+			return getAgentAvailability(context, itemIndex);
+		case 'updateAvailability':
+			return updateAgentAvailability(context, itemIndex);
 	}
 }
 
@@ -92,6 +96,46 @@ async function updateAgent(
 			role,
 			...additionalFields,
 		},
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function getAgentAvailability(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const agentId = getAgentId.call(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/agents/${agentId}`,
+	) as IDataObject;
+
+	return {
+		json: {
+			id: result.id,
+			availability_status: result.availability_status,
+			auto_offline: result.auto_offline,
+		},
+	};
+}
+
+async function updateAgentAvailability(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const agentId = getAgentId.call(context, itemIndex);
+	const availability_status = context.getNodeParameter('availability_status', itemIndex) as string;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'PATCH',
+		`/api/v1/accounts/${accountId}/agents/${agentId}`,
+		{ availability_status },
 	) as IDataObject;
 
 	return { json: result };

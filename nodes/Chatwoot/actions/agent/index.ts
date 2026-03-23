@@ -28,6 +28,12 @@ const agentOperations: INodeProperties[] = [
 				action: 'Delete agent',
 			},
 			{
+				name: 'Get Availability',
+				value: 'getAvailability',
+				description: 'Get the availability status of an agent',
+				action: 'Get agent availability',
+			},
+			{
 				name: 'List',
 				value: 'list',
 				description: 'List all agents in account',
@@ -38,6 +44,12 @@ const agentOperations: INodeProperties[] = [
 				value: 'update',
 				description: 'Update an agent in account',
 				action: 'Update agent',
+			},
+			{
+				name: 'Update Availability',
+				value: 'updateAvailability',
+				description: 'Update the availability status of an agent',
+				action: 'Update agent availability',
 			},
 		],
 		default: 'list',
@@ -56,7 +68,7 @@ const agentFields: INodeProperties[] = [
 		displayOptions: {
 			show: {
 				...showOnlyForAgent,
-				operation: ['delete', 'update'],
+				operation: ['delete', 'update', 'getAvailability', 'updateAvailability'],
 			},
 		},
 	},
@@ -162,6 +174,25 @@ const agentFields: INodeProperties[] = [
 				description: 'The availability status of the agent',
 			},
 		],
+	},
+	{
+		displayName: 'Availability Status',
+		name: 'availability_status',
+		type: 'options',
+		options: [
+			{ name: 'Available', value: 'available' },
+			{ name: 'Busy', value: 'busy' },
+			{ name: 'Offline', value: 'offline' },
+		],
+		default: 'available',
+		required: true,
+		description: 'The new availability status for the agent',
+		displayOptions: {
+			show: {
+				...showOnlyForAgent,
+				operation: ['updateAvailability'],
+			},
+		},
 	},
 ];
 

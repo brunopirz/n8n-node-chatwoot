@@ -115,6 +115,10 @@ export async function executeConversationOperation(
 			return autoAssignConversation(context, itemIndex);
 		case 'updateCustomAttributes':
 			return updateCustomAttributesBatch(context, itemIndex);
+		case 'createNote':
+			return createConversationNote(context, itemIndex);
+		case 'bulkAction':
+			return conversationBulkAction(context, itemIndex);
 	}
 }
 
@@ -1586,4 +1590,75 @@ async function deleteMessage(
 			deleted: true,
 		},
 	};
+}
+
+async function createConversationNote(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const content = context.getNodeParameter('noteContent', itemIndex) as string;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+		{
+			content,
+			private: true,
+			message_type: 'outgoing',
+		},
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function conversationBulkAction(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const idsRaw = context.getNodeParameter('bulkIds', itemIndex) as string;
+	const action = context.getNodeParameter('bulkActionType', itemIndex) as string;
+
+	// Parse comma-separated or JSON array
+	let ids: number[];
+	const trimmed = idsRaw.trim();
+	if (trimmed.startsWith('[')) {
+		ids = JSON.parse(trimmed) as number[];
+	} else {
+		ids = trimmed.split(',').map((id) => parseInt(id.trim(), 10)).filter((id) => !isNaN(id));
+	}
+
+	const fields: IDataObject = {};
+
+	if (action === 'assignAgent') {
+		const agentId = context.getNodeParameter('bulkAgentId', itemIndex, 0) as number;
+		if (agentId) fields.assignee_id = agentId;
+	} else if (action === 'unassignAgent') {
+		fields.assignee_id = null;
+	} else if (action === 'assignTeam') {
+		const teamId = context.getNodeParameter('bulkTeamId', itemIndex, 0) as number;
+		if (teamId) fields.team_id = teamId;
+	} else if (action === 'changeStatus') {
+		const status = context.getNodeParameter('bulkStatus', itemIndex) as string;
+		fields.status = status;
+	} else if (action === 'addLabel' || action === 'removeLabel') {
+		const label = context.getNodeParameter('bulkLabel', itemIndex) as string;
+		fields.labels = [label];
+	}
+
+	await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/bulk_actions`,
+		{
+			type: 'Conversation',
+			ids,
+			fields,
+		},
+	);
+
+	return { json: { success: true, processed: ids.length } };
 }

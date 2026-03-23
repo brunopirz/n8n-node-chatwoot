@@ -25,4 +25,6 @@ export type ConversationOperation =
   | 'updatePresence'
   | 'markUnread'
   | 'updateAttachmentMeta'
-  | 'deleteMessage';
+  | 'deleteMessage'
+  | 'createNote'
+  | 'bulkAction';

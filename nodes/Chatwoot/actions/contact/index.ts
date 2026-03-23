@@ -223,6 +223,23 @@ const contactFields: INodeProperties[] = [
     },
   },
   {
+    displayName: 'Clear Fields',
+    name: 'clearFields',
+    type: 'multiOptions',
+    default: [],
+    description: 'Select fields to clear (set to null/empty) on the contact',
+    options: [
+      { name: 'Phone Number', value: 'phone_number' },
+      { name: 'Email', value: 'email' },
+    ],
+    displayOptions: {
+      show: {
+        ...showOnlyForContact,
+        operation: ['update'],
+      },
+    },
+  },
+  {
     displayName: 'Search Query',
     name: 'searchQuery',
     type: 'string',

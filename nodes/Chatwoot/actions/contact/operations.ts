@@ -324,7 +324,6 @@ async function createContact(
 	return { json: result };
 }
 
-// TODO: Figure out a way to clear phone number and email
 async function updateContact(
 	context: IExecuteFunctions,
 	itemIndex: number,
@@ -334,6 +333,7 @@ async function updateContact(
 	const name = context.getNodeParameter('name', itemIndex, '');
 	const phoneNumber = context.getNodeParameter('phoneNumber', itemIndex, '');
 	const email = context.getNodeParameter('email', itemIndex, '');
+	const clearFields = context.getNodeParameter('clearFields', itemIndex, []) as string[];
 	const additionalFields = context.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
 
 	if (phoneNumber && !E164_REGEX.test(String(phoneNumber))) {
@@ -355,10 +355,22 @@ async function updateContact(
 	const { identifier, avatarUrl, blocked, additionalAttributes } = parseContactAdditionalFields(additionalFields);
 	const customAttributes = parseContactCustomAttributes(context, itemIndex, 'Update');
 
+	// Resolve phone_number: explicit null to clear, value to set, undefined to leave unchanged
+	let resolvedPhone: string | null | undefined = (phoneNumber as string) || undefined;
+	if (clearFields.includes('phone_number')) {
+		resolvedPhone = null;
+	}
+
+	// Resolve email: explicit null to clear, value to set, undefined to leave unchanged
+	let resolvedEmail: string | null | undefined = (email as string) || undefined;
+	if (clearFields.includes('email')) {
+		resolvedEmail = null;
+	}
+
 	const body: IDataObject = {
 		name: name || undefined,
-		phone_number: phoneNumber || undefined,
-		email: email || undefined,
+		phone_number: resolvedPhone,
+		email: resolvedEmail,
 		additional_attributes: additionalAttributes,
 		identifier: identifier || undefined,
 		avatar_url: avatarUrl || undefined,

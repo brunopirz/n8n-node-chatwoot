@@ -184,6 +184,18 @@ const conversationOperations: INodeProperties[] = [
         description: 'Update metadata on an existing attachment (e.g., transcription, description)',
         action: 'Update attachment metadata',
       },
+      {
+        name: 'Create Note',
+        value: 'createNote',
+        description: 'Create a private note in a conversation',
+        action: 'Create note in conversation',
+      },
+      {
+        name: 'Bulk Action',
+        value: 'bulkAction',
+        description: 'Perform an action on multiple conversations at once',
+        action: 'Bulk action on conversations',
+      },
     ],
     default: 'list',
   },
@@ -292,7 +304,7 @@ const conversationFields: INodeProperties[] = [
     displayOptions: {
       show: {
         ...showOnlyForConversation,
-        operation: ['autoAssign', 'updateCustomAttributes', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
+        operation: ['autoAssign', 'updateCustomAttributes', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage', 'createNote'],
       },
     },
   },
@@ -1563,6 +1575,128 @@ const listMessagesFields: INodeProperties[] = [
   },
 ];
 
+const createNoteFields: INodeProperties[] = [
+  {
+    displayName: 'Note Content',
+    name: 'noteContent',
+    type: 'string',
+    default: '',
+    required: true,
+    typeOptions: {
+      rows: 4,
+    },
+    description: 'Content of the private note',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['createNote'],
+      },
+    },
+  },
+];
+
+const bulkActionFields: INodeProperties[] = [
+  {
+    displayName: 'Conversation IDs',
+    name: 'bulkIds',
+    type: 'string',
+    default: '',
+    required: true,
+    placeholder: '1,2,3 or [1,2,3]',
+    description: 'Comma-separated list or JSON array of conversation IDs to act on',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+      },
+    },
+  },
+  {
+    displayName: 'Action',
+    name: 'bulkActionType',
+    type: 'options',
+    options: [
+      { name: 'Assign Agent', value: 'assignAgent' },
+      { name: 'Unassign Agent', value: 'unassignAgent' },
+      { name: 'Assign Team', value: 'assignTeam' },
+      { name: 'Change Status', value: 'changeStatus' },
+      { name: 'Add Label', value: 'addLabel' },
+      { name: 'Remove Label', value: 'removeLabel' },
+    ],
+    default: 'changeStatus',
+    required: true,
+    description: 'Action to perform on the selected conversations',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+      },
+    },
+  },
+  {
+    displayName: 'Agent ID',
+    name: 'bulkAgentId',
+    type: 'number',
+    default: 0,
+    description: 'ID of the agent to assign',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+        bulkActionType: ['assignAgent'],
+      },
+    },
+  },
+  {
+    displayName: 'Team ID',
+    name: 'bulkTeamId',
+    type: 'number',
+    default: 0,
+    description: 'ID of the team to assign',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+        bulkActionType: ['assignTeam'],
+      },
+    },
+  },
+  {
+    displayName: 'Status',
+    name: 'bulkStatus',
+    type: 'options',
+    options: [
+      { name: 'Open', value: 'open' },
+      { name: 'Resolved', value: 'resolved' },
+      { name: 'Pending', value: 'pending' },
+      { name: 'Snoozed', value: 'snoozed' },
+    ],
+    default: 'resolved',
+    description: 'Status to set on the conversations',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+        bulkActionType: ['changeStatus'],
+      },
+    },
+  },
+  {
+    displayName: 'Label',
+    name: 'bulkLabel',
+    type: 'string',
+    default: '',
+    description: 'Label to add or remove',
+    displayOptions: {
+      show: {
+        ...showOnlyForConversation,
+        operation: ['bulkAction'],
+        bulkActionType: ['addLabel', 'removeLabel'],
+      },
+    },
+  },
+];
+
 export const conversationDescription: INodeProperties[] = [
   ...conversationOperations,
   ...conversationFields,
@@ -1574,6 +1708,8 @@ export const conversationDescription: INodeProperties[] = [
   ...deleteMessageFields,
   ...downloadAttachmentFields,
   ...listMessagesFields,
+  ...createNoteFields,
+  ...bulkActionFields,
 ];
 
 export { executeConversationOperation } from './operations';

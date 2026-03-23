@@ -3,7 +3,21 @@ import type {
 	INodeListSearchItems,
 	INodeListSearchResult,
 } from 'n8n-workflow';
-import { chatwootApiRequest, getAccountId, getChatwootBaseUrl, getConversationId, getInboxId, getKanbanBoardId, getMessageId, getTeamId, getTemplateName } from '../shared/transport';
+import { chatwootApiRequest, getAccountId, getChatwootBaseUrl, getConversationId, getInboxId, getKanbanBoardId, getKanbanStepId, getMessageId, getTeamId, getTemplateName } from '../shared/transport';
+
+interface ChatwootCannedResponse {
+	id: number;
+	short_code: string;
+	content: string;
+}
+
+interface ChatwootAutomation {
+	id: number;
+	name: string;
+	description?: string;
+	event_name?: string;
+	active?: boolean;
+}
 import {
 	ChatwootAccount,
 	ChatwootAgent,
@@ -12,6 +26,7 @@ import {
 	ChatwootConversation,
 	ChatwootInbox,
 	ChatwootKanbanBoard,
+	ChatwootKanbanItem,
 	ChatwootKanbanStep,
 	ChatwootKanbanTask,
 	ChatwootLabel,
@@ -19,6 +34,7 @@ import {
 	ChatwootMessageTemplate,
 	ChatwootPayloadResponse,
 	ChatwootPayloadResponseWithData,
+	ChatwootPortal,
 	ChatwootProfileResponse,
 	ChatwootScheduledMessage,
 	ChatwootTeam,
@@ -912,6 +928,163 @@ export async function searchTemplateStructure(
 			name: 'No components found in template',
 			value: '',
 		});
+	}
+
+	return { results };
+}
+
+/**
+ * Get all kanban items for the selected step (for resourceLocator)
+ */
+export async function searchKanbanItems(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const accountId = getAccountId.call(this, 0);
+	let stepId: string;
+	try {
+		stepId = getKanbanStepId.call(this, 0);
+	} catch {
+		return { results: [] };
+	}
+	if (!accountId || !stepId) {
+		return { results: [] };
+	}
+
+	const response = (await chatwootApiRequest.call(
+		this,
+		'GET',
+		`/api/v1/accounts/${accountId}/kanban/steps/${stepId}/items`,
+	)) as { items?: ChatwootKanbanItem[] } | ChatwootKanbanItem[];
+
+	const items =
+		(response as { items?: ChatwootKanbanItem[] }).items ||
+		(response as ChatwootKanbanItem[]) ||
+		[];
+
+	let results = items.map((item: ChatwootKanbanItem) => ({
+		name: `#${item.id} - Conversation #${item.conversation_id}`,
+		value: String(item.id),
+	}));
+
+	if (filter) {
+		const filterLower = filter.toLowerCase();
+		results = results.filter(
+			(item) =>
+				item.name.toLowerCase().includes(filterLower) ||
+				item.value.includes(filter),
+		);
+	}
+
+	return { results };
+}
+
+/**
+ * Get all canned responses for the selected account (for resourceLocator)
+ */
+export async function searchCannedResponses(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const accountId = getAccountId.call(this, 0);
+	if (accountId === '') {
+		return { results: [] };
+	}
+
+	const query = filter ? { search: filter } : undefined;
+
+	const response = (await chatwootApiRequest.call(
+		this,
+		'GET',
+		`/api/v1/accounts/${accountId}/canned_responses`,
+		undefined,
+		query,
+	)) as ChatwootCannedResponse[];
+
+	const results = (response || []).map((item: ChatwootCannedResponse) => ({
+		name: `/${item.short_code} — ${item.content.substring(0, 60)}${item.content.length > 60 ? '...' : ''}`,
+		value: String(item.id),
+	}));
+
+	return { results };
+}
+
+/**
+ * Get all Help Center portals (for resourceLocator - returns slug as value)
+ */
+export async function searchPortals(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const response = (await chatwootApiRequest.call(
+		this,
+		'GET',
+		'/api/v1/portals',
+	)) as { payload?: ChatwootPortal[] | { portals?: ChatwootPortal[] } } | ChatwootPortal[];
+
+	const payload = (response as { payload?: unknown }).payload;
+	let portals: ChatwootPortal[] = [];
+
+	if (Array.isArray(payload)) {
+		portals = payload as ChatwootPortal[];
+	} else if (payload && typeof payload === 'object' && Array.isArray((payload as { portals?: ChatwootPortal[] }).portals)) {
+		portals = (payload as { portals: ChatwootPortal[] }).portals;
+	} else if (Array.isArray(response)) {
+		portals = response as ChatwootPortal[];
+	}
+
+	let results = portals.map((portal: ChatwootPortal) => ({
+		name: portal.name,
+		value: portal.slug,
+	}));
+
+	if (filter) {
+		const filterLower = filter.toLowerCase();
+		results = results.filter(
+			(item) =>
+				item.name.toLowerCase().includes(filterLower) ||
+				item.value.toLowerCase().includes(filterLower),
+		);
+	}
+
+	return { results };
+}
+
+/**
+ * Get all automation rules for the selected account (for resourceLocator)
+ */
+export async function searchAutomations(
+	this: ILoadOptionsFunctions,
+	filter?: string,
+): Promise<INodeListSearchResult> {
+	const accountId = getAccountId.call(this, 0);
+	if (accountId === '') {
+		return { results: [] };
+	}
+
+	const response = (await chatwootApiRequest.call(
+		this,
+		'GET',
+		`/api/v1/accounts/${accountId}/automation_rules`,
+	)) as { payload?: ChatwootAutomation[] } | ChatwootAutomation[];
+
+	const items =
+		(response as { payload?: ChatwootAutomation[] }).payload ||
+		(response as ChatwootAutomation[]) ||
+		[];
+
+	let results = items.map((item: ChatwootAutomation) => ({
+		name: `#${item.id} - ${item.name}`,
+		value: String(item.id),
+	}));
+
+	if (filter) {
+		const filterLower = filter.toLowerCase();
+		results = results.filter(
+			(item) =>
+				item.name.toLowerCase().includes(filterLower) ||
+				item.value.includes(filter),
+		);
 	}
 
 	return { results };

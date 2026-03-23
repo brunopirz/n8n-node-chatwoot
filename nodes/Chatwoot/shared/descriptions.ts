@@ -86,6 +86,16 @@ export const kanbanTaskSelector: INodeProperties = resourceSelector(
 );
 
 /**
+ * Kanban Item selector using resourceLocator (From List / By ID in single field)
+ */
+export const kanbanItemSelector: INodeProperties = resourceSelector(
+	'Kanban Item',
+	'kanbanItemId',
+	'Select the kanban item to use.',
+	'searchKanbanItems',
+);
+
+/**
  * Account selector using resourceLocator (From List / By ID in single field)
  */
 export const accountSelector: INodeProperties = resourceSelector(
@@ -236,6 +246,56 @@ export const messageTemplateSelector: INodeProperties = {
 };
 
 /**
+ * Canned Response selector using resourceLocator (From List / By ID in single field)
+ */
+export const cannedResponseSelector: INodeProperties = resourceSelector(
+	'Canned Response',
+	'cannedResponseId',
+	'Select the canned response to use',
+	'searchCannedResponses',
+);
+
+/**
+ * Automation selector using resourceLocator (From List / By ID in single field)
+ */
+export const automationSelector: INodeProperties = resourceSelector(
+	'Automation',
+	'automationId',
+	'Select the automation rule to use',
+	'searchAutomations',
+);
+
+/**
+ * Portal selector using resourceLocator (From List / By Slug)
+ */
+export const portalSlugSelector: INodeProperties = {
+	displayName: 'Portal',
+	name: 'portalSlug',
+	type: 'resourceLocator',
+	default: { mode: 'list', value: '' },
+	required: true,
+	description: 'Select the Help Center portal to use.',
+	modes: [
+		{
+			displayName: 'From List',
+			name: 'list',
+			type: 'list',
+			placeholder: 'Select a portal...',
+			typeOptions: {
+				searchListMethod: 'searchPortals',
+				searchable: true,
+			},
+		},
+		{
+			displayName: 'By Slug',
+			name: 'slug',
+			type: 'string',
+			placeholder: 'e.g. my-help-center',
+		},
+	],
+};
+
+/**
  * Webhook events multi-select
  */
 export const webhookEventsSelector: INodeProperties = {
@@ -257,6 +317,7 @@ export const webhookEventsSelector: INodeProperties = {
 		{ name: 'Kanban Task Deleted', value: 'kanban_task_deleted' },
 		{ name: 'Kanban Task Overdue', value: 'kanban_task_overdue' },
 		{ name: 'Kanban Task Updated', value: 'kanban_task_updated' },
+		{ name: 'Kanban Item Moved', value: 'kanban_item_moved' },
 		{ name: 'Live Chat Widget Opened by the User', value: 'webwidget_triggered' },
 		{ name: 'Message Created', value: 'message_created' },
 		{ name: 'Message Incoming', value: 'message_incoming' },
