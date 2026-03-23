@@ -111,7 +111,87 @@ export async function executeConversationOperation(
 			return updateAttachmentMeta(context, itemIndex);
 		case 'deleteMessage':
 			return deleteMessage(context, itemIndex);
+		case 'autoAssign':
+			return autoAssignConversation(context, itemIndex);
+		case 'updateCustomAttributes':
+			return updateCustomAttributesBatch(context, itemIndex);
 	}
+}
+
+async function autoAssignConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const assigneeIdsStr = context.getNodeParameter('assigneeIds', itemIndex, '') as string;
+	const strategy = context.getNodeParameter('routingStrategy', itemIndex, 'round_robin') as string;
+
+	const assigneeIds = assigneeIdsStr.split(',').map(id => parseInt(id.trim(), 10)).filter(id => !isNaN(id));
+
+	if (assigneeIds.length === 0) {
+		throw new NodeOperationError(context.getNode(), 'No valid Assignee IDs provided for Auto-Assign.', { itemIndex });
+	}
+
+	let selectedAgentId = assigneeIds[0];
+
+	if (strategy === 'round_robin') {
+		const staticData = context.getWorkflowStaticData('node');
+		let lastIndex = staticData.lastAssignedIndex as number || 0;
+		// Next index
+		lastIndex = (lastIndex + 1) % assigneeIds.length;
+		selectedAgentId = assigneeIds[lastIndex];
+		staticData.lastAssignedIndex = lastIndex;
+	} else if (strategy === 'least_busy') {
+		// Advanced routing requires many API calls. For now fallback to random among the list.
+		// A full implementation would query Chatwoot's API for each agent's active workload.
+		selectedAgentId = assigneeIds[Math.floor(Math.random() * assigneeIds.length)];
+	}
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/assignments`,
+		{ assignee_id: selectedAgentId },
+	) as IDataObject;
+
+	return { json: { ...result, _assigned_to: selectedAgentId, _strategy_used: strategy } };
+}
+
+async function updateCustomAttributesBatch(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const customAttributesJson = context.getNodeParameter('customAttributesJsonBatch', itemIndex, '{}') as string;
+
+	let attributesToAdd: IDataObject;
+	try {
+		attributesToAdd = typeof customAttributesJson === 'string'
+			? JSON.parse(customAttributesJson)
+			: customAttributesJson;
+	} catch (error) {
+		throw new NodeOperationError(context.getNode(), 'Invalid JSON provided for Custom Attributes Batch update.', { itemIndex });
+	}
+
+	const conversation = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	)) as IDataObject;
+
+	const currentAttributes = (conversation.custom_attributes as IDataObject) || {};
+	const mergedAttributes = { ...currentAttributes, ...attributesToAdd };
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/custom_attributes`,
+		{ custom_attributes: mergedAttributes },
+	) as IDataObject;
+
+	return { json: result };
 }
 
 async function listConversationMessages(

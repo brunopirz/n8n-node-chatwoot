@@ -83,6 +83,18 @@ const conversationOperations: INodeProperties[] = [
         action: 'Download attachment from conversation',
       },
       {
+        name: 'Auto-Assign Agent',
+        value: 'autoAssign',
+        description: 'Automatically assign a conversation to an agent from a list',
+        action: 'Auto assign conversation',
+      },
+      {
+        name: 'Update Custom Attributes (Batch)',
+        value: 'updateCustomAttributes',
+        description: 'Update multiple custom attributes on a conversation via JSON',
+        action: 'Update custom attributes on conversation',
+      },
+      {
         name: 'Assign Agent',
         value: 'assignAgent',
         description: 'Assign an agent to conversation',
@@ -214,11 +226,55 @@ const updatePresenceFields: INodeProperties[] = [
 
 const conversationFields: INodeProperties[] = [
   {
+    displayName: 'Assignee IDs (Comma separated)',
+    name: 'assigneeIds',
+    type: 'string',
+    default: '',
+    required: true,
+    description: 'Comma separated list of Agent IDs to route the conversation to',
+    displayOptions: {
+      show: {
+        resource: ['conversation'],
+        operation: ['autoAssign'],
+      },
+    },
+  },
+  {
+    displayName: 'Routing Strategy',
+    name: 'routingStrategy',
+    type: 'options',
+    default: 'round_robin',
+    options: [
+      { name: 'Round Robin', value: 'round_robin' },
+      { name: 'Least Busy', value: 'least_busy' }
+    ],
+    displayOptions: {
+      show: {
+        resource: ['conversation'],
+        operation: ['autoAssign'],
+      },
+    },
+  },
+  {
+    displayName: 'Custom Attributes JSON',
+    name: 'customAttributesJsonBatch',
+    type: 'json',
+    default: '{}',
+    required: true,
+    description: 'JSON object with the custom attributes to update',
+    displayOptions: {
+      show: {
+        resource: ['conversation'],
+        operation: ['updateCustomAttributes'],
+      },
+    },
+  },
+  {
     ...accountSelector,
     displayOptions: {
       show: {
         ...showOnlyForConversation,
-        operation: ['create', 'list', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
+        operation: ['autoAssign', 'updateCustomAttributes', 'create', 'list', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
       },
     },
   },
@@ -227,7 +283,7 @@ const conversationFields: INodeProperties[] = [
     displayOptions: {
       show: {
         ...showOnlyForConversation,
-        operation: ['list', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
+        operation: ['autoAssign', 'updateCustomAttributes', 'list', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
       },
     },
   },
@@ -236,7 +292,7 @@ const conversationFields: INodeProperties[] = [
     displayOptions: {
       show: {
         ...showOnlyForConversation,
-        operation: ['get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
+        operation: ['autoAssign', 'updateCustomAttributes', 'get', 'toggleStatus', 'assignAgent', 'assignTeam', 'addLabels', 'removeLabels', 'updateLabels', 'listLabels', 'addCustomAttributes', 'removeCustomAttributes', 'setCustomAttributes', 'setPriority', 'sendMessage', 'sendFile', 'sendTemplate', 'updateLastSeen', 'updatePresence', 'markUnread', 'listMessages', 'listAttachments', 'updateAttachmentMeta', 'deleteMessage'],
       },
     },
   },

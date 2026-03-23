@@ -195,6 +195,20 @@ export class ChatwootTrigger implements INodeType {
 						],
 					},
 				],
+			},
+			{
+				displayName: 'Ignore Bot Messages',
+				name: 'ignoreBotMessages',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to ignore messages sent by the bot (outgoing). Saves N8N executions.',
+			},
+			{
+				displayName: 'Ignore Private Notes',
+				name: 'ignorePrivateNotes',
+				type: 'boolean',
+				default: false,
+				description: 'Whether to ignore private notes created by agents.',
 			}
 		],
 	};
@@ -356,7 +370,19 @@ export class ChatwootTrigger implements INodeType {
 	};
 
 	async webhook(this: IWebhookFunctions): Promise<IWebhookResponseData> {
-		const bodyData = this.getBodyData();
+		const bodyData = this.getBodyData() as IDataObject;
+
+		const ignoreBotMessages = this.getNodeParameter('ignoreBotMessages', false) as boolean;
+		const ignorePrivateNotes = this.getNodeParameter('ignorePrivateNotes', false) as boolean;
+
+		if (ignoreBotMessages && bodyData.message_type === 'outgoing') {
+			return {};
+		}
+
+		if (ignorePrivateNotes && bodyData.private === true) {
+			return {};
+		}
+
 		return {
 			workflowData: [
 				this.helpers.returnJsonArray(bodyData),

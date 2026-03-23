@@ -1,4 +1,5 @@
 export type ContactOperation =
+	| 'upsert'
 	| 'create'
 	| 'get'
 	| 'update'

@@ -1,7 +1,7 @@
 import type { IDataObject, IExecuteFunctions, INodeExecutionData } from 'n8n-workflow';
 import { NodeOperationError } from 'n8n-workflow';
 import {
-  chatwootApiRequest,
+	chatwootApiRequest,
 	getAccountId,
 	getContactId,
 } from '../../shared/transport';
@@ -116,39 +116,144 @@ function parseContactCustomAttributes(
 }
 
 export async function executeContactOperation(
-  context: IExecuteFunctions,
-  operation: ContactOperation,
-  itemIndex: number,
+	context: IExecuteFunctions,
+	operation: ContactOperation,
+	itemIndex: number,
 ): Promise<INodeExecutionData | INodeExecutionData[]> {
-  switch (operation) {
-    case 'create':
-      return createContact(context, itemIndex);
-    case 'get':
-      return getContact(context, itemIndex);
+	switch (operation) {
+		case 'create':
+			return createContact(context, itemIndex);
+		case 'get':
+			return getContact(context, itemIndex);
 		case 'update':
 			return updateContact(context, itemIndex);
-    case 'delete':
-      return deleteContact(context, itemIndex);
-    case 'list':
-      return listContacts(context, itemIndex);
-    case 'search':
-      return searchContacts(context, itemIndex);
-    case 'listConversations':
-      return listContactConversations(context, itemIndex);
-    case 'merge':
-      return mergeContacts(context, itemIndex);
-    case 'listLabels':
-      return listContactLabels(context, itemIndex);
-    case 'addLabels':
-      return addLabelsToContact(context, itemIndex);
-    case 'updateLabels':
-      return updateContactLabels(context, itemIndex);
-    case 'removeLabels':
-      return removeLabelsFromContact(context, itemIndex);
-    case 'setCustomAttributes':
-      return setCustomAttributes(context, itemIndex);
-    case 'destroyCustomAttributes':
+		case 'delete':
+			return deleteContact(context, itemIndex);
+		case 'list':
+			return listContacts(context, itemIndex);
+		case 'search':
+			return searchContacts(context, itemIndex);
+		case 'listConversations':
+			return listContactConversations(context, itemIndex);
+		case 'merge':
+			return mergeContacts(context, itemIndex);
+		case 'listLabels':
+			return listContactLabels(context, itemIndex);
+		case 'addLabels':
+			return addLabelsToContact(context, itemIndex);
+		case 'updateLabels':
+			return updateContactLabels(context, itemIndex);
+		case 'removeLabels':
+			return removeLabelsFromContact(context, itemIndex);
+		case 'setCustomAttributes':
+			return setCustomAttributes(context, itemIndex);
+		case 'destroyCustomAttributes':
 			return destroyCustomAttributes(context, itemIndex);
+		case 'upsert':
+			return upsertContact(context, itemIndex);
+	}
+}
+
+async function upsertContact(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const name = context.getNodeParameter('name', itemIndex, '');
+	const phoneNumber = context.getNodeParameter('phoneNumber', itemIndex, '');
+	const email = context.getNodeParameter('email', itemIndex, '');
+	const additionalFields = context.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+
+	if (!phoneNumber && !email) {
+		throw new NodeOperationError(
+			context.getNode(),
+			'Upsert requires either an Email or a Phone Number to search for an existing contact.',
+			{ itemIndex },
+		);
+	}
+
+	if (phoneNumber && !E164_REGEX.test(String(phoneNumber))) {
+		throw new NodeOperationError(
+			context.getNode(),
+			`Invalid phone number format. Expected E.164 format (e.g., +5511999999999), got: ${phoneNumber}`,
+			{ itemIndex },
+		);
+	}
+
+	if (email && !EMAIL_REGEX.test(String(email))) {
+		throw new NodeOperationError(
+			context.getNode(),
+			`Invalid email address format: ${email}`,
+			{ itemIndex },
+		);
+	}
+
+	// Search for existing contact
+	let existingContactId: number | undefined;
+	const searchQuery = phoneNumber || email;
+
+	try {
+		const searchResult = await chatwootApiRequest.call(
+			context,
+			'GET',
+			`/api/v1/accounts/${accountId}/contacts/search`,
+			undefined,
+			{ q: searchQuery }
+		) as IDataObject;
+
+		if (searchResult?.payload && Array.isArray(searchResult.payload) && searchResult.payload.length > 0) {
+			// Find exact match just to be safe (Chatwoot search is broad)
+			const match = searchResult.payload.find((c: any) =>
+				(email && c.email === email) || (phoneNumber && c.phone_number === phoneNumber)
+			);
+			if (match) {
+				existingContactId = match.id as number;
+			} else if (searchResult.payload[0].id) {
+				// Fallback to first result if it matched somehow 
+				existingContactId = searchResult.payload[0].id as number;
+			}
+		}
+	} catch (error) {
+		// Ignore search errors and proceed to create
+	}
+
+	const { identifier, avatarUrl, blocked, additionalAttributes } = parseContactAdditionalFields(additionalFields);
+	const customAttributes = parseContactCustomAttributes(context, itemIndex, 'Create');
+
+	const body: IDataObject = {
+		name: name || undefined,
+		phone_number: phoneNumber || undefined,
+		email: email || undefined,
+		additional_attributes: additionalAttributes,
+		identifier: identifier || undefined,
+		avatar_url: avatarUrl || undefined,
+		blocked: blocked !== undefined ? blocked : undefined,
+		custom_attributes: customAttributes,
+	};
+
+	if (existingContactId) {
+		const result = await chatwootApiRequest.call(
+			context,
+			'PUT',
+			`/api/v1/accounts/${accountId}/contacts/${existingContactId}`,
+			body,
+		) as IDataObject;
+		return { json: { ...result, _upsert_action: 'updated' } };
+	} else {
+		if (!name) {
+			throw new NodeOperationError(
+				context.getNode(),
+				'Name is required to create a new contact during Upsert.',
+				{ itemIndex },
+			);
+		}
+		const result = await chatwootApiRequest.call(
+			context,
+			'POST',
+			`/api/v1/accounts/${accountId}/contacts`,
+			body,
+		) as IDataObject;
+		return { json: { ...result, _upsert_action: 'created' } };
 	}
 }
 
