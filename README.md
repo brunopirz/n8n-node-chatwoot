@@ -8,7 +8,7 @@ This is an n8n community node that lets you use [Chatwoot](https://www.chatwoot.
 Chatwoot is an open-source customer engagement platform that helps businesses manage customer conversations across multiple channels. This node provides comprehensive integration with the Chatwoot API, allowing you to automate customer support workflows, manage contacts, handle conversations, and more.
 
 > [!TIP]
-> For enhanced features and optimal performance, we recommend using [SingulHub's Chatwoot](https://github.com/singulhub/chatwoot), which includes additional capabilities like Kanban boards, WhatsApp integration with Baileys/Z-API providers, and more webhook events.
+> For enhanced features and optimal performance, we recommend using [SingulHub's Chatwoot](https://github.com/brunopirz/singul-woot), which includes additional capabilities like Kanban boards, WhatsApp integration with Baileys/Z-API providers, and more webhook events.
 
 [n8n](https://n8n.io/) is a [fair-code licensed](https://docs.n8n.io/reference/license/) workflow automation platform.
 
@@ -108,7 +108,7 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | WhatsApp Disconnect ⚡  | Disconnect a WhatsApp inbox                       |
 | WhatsApp Get QR Code ⚡ | Get QR code for WhatsApp inbox connection         |
 
-> ⚡ These operations are only available with [SingulHub's Chatwoot](https://github.com/singulhub/chatwoot)
+> ⚡ These operations are only available with [SingulHub's Chatwoot](https://github.com/brunopirz/singul-woot)
 
 ### Kanban Board ⚡
 
@@ -200,7 +200,7 @@ The **Chatwoot SingulHub Trigger** node supports the following webhook events:
 | Provider Event Received ⚡  | Triggered when a provider event is received      |
 | Live Chat Widget Opened     | Triggered when a user opens the live chat widget |
 
-> ⚡ These events are only available with [SingulHub's Chatwoot](https://github.com/singulhub/chatwoot)
+> ⚡ These events are only available with [SingulHub's Chatwoot](https://github.com/brunopirz/singul-woot)
 
 ## Credentials
 
@@ -265,7 +265,7 @@ This node is enabled as an n8n AI tool (`usableAsTool: true`), allowing it to be
 
 - [n8n Community Nodes Documentation](https://docs.n8n.io/integrations/community-nodes/)
 - [Chatwoot API Documentation](https://developers.chatwoot.com/api-reference/introduction)
-- [SingulHub Chatwoot Repository](https://github.com/singulhub/chatwoot)
+- [SingulHub Chatwoot Repository](https://github.com/brunopirz/singul-woot)
 - [SingulHub Website](https://singulhub.com.br)
 
 ## Development

@@ -7,7 +7,7 @@ import type { INodeProperties } from 'n8n-workflow';
  */
 export function chatwootSingulHubOnlyOperation(operationName: string): INodeProperties {
 	return {
-		displayName: `The ${operationName} operation is only available on <a href="https://github.com/singulhub/chatwoot/pkgs/container/chatwoot" target="_blank">Chatwoot SingulHub</a>`,
+		displayName: `The ${operationName} operation is only available on <a href="https://github.com/brunopirz/singul-woot/pkgs/container/singul-woot" target="_blank">Chatwoot SingulHub</a>`,
 		name: 'singulHubNotice',
 		type: 'notice',
 		default: '',

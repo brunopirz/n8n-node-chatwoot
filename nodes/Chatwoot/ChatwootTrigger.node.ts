@@ -141,7 +141,7 @@ export class ChatwootTrigger implements INodeType {
 			accountSelector,
 			webhookEventsSelector,
 			{
-				displayName: `These events require <a href="https://github.com/singulhub/chatwoot/pkgs/container/chatwoot" target="_blank">Chatwoot SingulHub</a> and are not available in the standard Chatwoot release`,
+				displayName: `These events require <a href="https://github.com/brunopirz/singul-woot/pkgs/container/singul-woot" target="_blank">Chatwoot SingulHub</a> and are not available in the standard Chatwoot release`,
 				name: 'notice',
 				type: 'notice',
 				default: '',

@@ -26,7 +26,7 @@ export class ChatwootApi implements ICredentialType {
 				'Base URL of your Chatwoot instance. E.g.: https://app.chatwoot.com',
 		},
 		{
-			displayName: 'For enhanced features and optimal performance, we recommend using <a href="https://github.com/singulhub/chatwoot" target="_blank">SingulHub\'s Chatwoot</a>.',
+			displayName: 'For enhanced features and optimal performance, we recommend using <a href="https://github.com/brunopirz/singul-woot" target="_blank">SingulHub\'s Chatwoot</a>.',
 			name: 'apiNotice',
 			type: 'notice',
 			default: '',
