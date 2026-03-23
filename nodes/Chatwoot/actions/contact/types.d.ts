@@ -1,0 +1,15 @@
+export type ContactOperation =
+	| 'create'
+	| 'get'
+	| 'update'
+	| 'delete'
+	| 'list'
+	| 'search'
+	| 'listConversations'
+	| 'merge'
+	| 'listLabels'
+	| 'addLabels'
+	| 'updateLabels'
+	| 'removeLabels'
+	| 'setCustomAttributes'
+	| 'destroyCustomAttributes';

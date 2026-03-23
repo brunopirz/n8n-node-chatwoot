@@ -1,0 +1,1509 @@
+import { NodeOperationError, type IDataObject, type IExecuteFunctions, type INodeExecutionData } from 'n8n-workflow';
+import {
+	asyncSleep,
+	chatwootApiRequest,
+	getAccountId,
+	getInboxId,
+	getConversationId,
+	getContactId,
+	getTemplateName,
+} from '../../shared/transport';
+import { ConversationOperation } from './types';
+
+function parseCustomAttributes(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	paramSuffix: string = '',
+): IDataObject {
+	const specifyParamName = paramSuffix ? `specifyCustomAttributes${paramSuffix}` : 'specifyCustomAttributes';
+	const specifyMode = context.getNodeParameter(specifyParamName, itemIndex) as string;
+
+	if (specifyMode === 'definition') {
+		const definitionParamName = paramSuffix ? `customAttributesDefinition${paramSuffix}.attributes` : 'customAttributesDefinition.attributes';
+		const attributes = context.getNodeParameter(
+			definitionParamName,
+			itemIndex,
+			[],
+		) as Array<{ key: string; value: string }>;
+
+		const customAttributes: IDataObject = {};
+		for (const attr of attributes) {
+			if (attr.key) {
+				customAttributes[attr.key] = attr.value;
+			}
+		}
+		return customAttributes;
+	} else if (specifyMode === 'keypair') {
+		const keypairParamName = paramSuffix ? `customAttributesKeypair${paramSuffix}.attributes` : 'customAttributesKeypair.attributes';
+		const attributes = context.getNodeParameter(
+			keypairParamName,
+			itemIndex,
+			[],
+		) as Array<{ name: string; value: string }>;
+
+		const customAttributes: IDataObject = {};
+		for (const attr of attributes) {
+			if (attr.name) {
+				customAttributes[attr.name] = attr.value;
+			}
+		}
+		return customAttributes;
+	} else {
+		const jsonParamName = paramSuffix ? `customAttributesJson${paramSuffix}` : 'customAttributesJson';
+		const jsonValue = context.getNodeParameter(jsonParamName, itemIndex) as string;
+		return JSON.parse(jsonValue) as IDataObject;
+	}
+}
+
+export async function executeConversationOperation(
+	context: IExecuteFunctions,
+	operation: ConversationOperation,
+	itemIndex: number,
+): Promise<INodeExecutionData | INodeExecutionData[]> {
+	switch (operation) {
+		case 'create':
+			return createConversation(context, itemIndex);
+		case 'get':
+			return getConversation(context, itemIndex);
+		case 'list':
+			return listConversations(context, itemIndex);
+		case 'sendMessage':
+			return sendMessageToConversation(context, itemIndex);
+		case 'sendTemplate':
+			return sendTemplateToConversation(context, itemIndex);
+		case 'sendFile':
+			return sendFileToConversation(context, itemIndex);
+		case 'listMessages':
+			return listConversationMessages(context, itemIndex);
+		case 'listAttachments':
+			return listConversationAttachments(context, itemIndex);
+		case 'downloadAttachment':
+			return downloadAttachment(context, itemIndex);
+		case 'assignAgent':
+			return assignConversationAgent(context, itemIndex);
+		case 'assignTeam':
+			return assignConversationTeam(context, itemIndex);
+		case 'addLabels':
+			return addLabelsToConversation(context, itemIndex);
+		case 'removeLabels':
+			return removeLabelsFromConversation(context, itemIndex);
+		case 'updateLabels':
+			return updateConversationLabels(context, itemIndex);
+		case 'listLabels':
+			return listConversationLabels(context, itemIndex);
+		case 'toggleStatus':
+			return toggleConversationStatus(context, itemIndex);
+		case 'setPriority':
+			return setConversationPriority(context, itemIndex);
+		case 'addCustomAttributes':
+			return addCustomAttributesToConversation(context, itemIndex);
+		case 'removeCustomAttributes':
+			return removeCustomAttributesFromConversation(context, itemIndex);
+		case 'setCustomAttributes':
+			return setConversationCustomAttributes(context, itemIndex);
+		case 'updateLastSeen':
+			return updateConversationLastSeen(context, itemIndex);
+		case 'updatePresence':
+			return updateConversationPresence(context, itemIndex);
+		case 'markUnread':
+			return markConversationUnread(context, itemIndex);
+		case 'updateAttachmentMeta':
+			return updateAttachmentMeta(context, itemIndex);
+		case 'deleteMessage':
+			return deleteMessage(context, itemIndex);
+	}
+}
+
+async function listConversationMessages(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData[]> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const fetchAtLeast = context.getNodeParameter('fetchAtLeast', itemIndex, 20) as number;
+	const options = context.getNodeParameter('listMessagesOptions', itemIndex, {}) as IDataObject;
+
+	const allMessages: IDataObject[] = [];
+	const seenIds = new Set<number>();
+	const beforeParam = options.before as { mode: string; value: string } | undefined;
+	let beforeId = beforeParam?.value ? Number(beforeParam.value) : undefined;
+	let hasMore = true;
+
+	while (hasMore && allMessages.length < fetchAtLeast) {
+		const query: IDataObject = {};
+		if (beforeId !== undefined) {
+			query.before = beforeId;
+		}
+
+		const response = (await chatwootApiRequest.call(
+			context,
+			'GET',
+			`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+			undefined,
+			query,
+		)) as IDataObject;
+
+		const messages = (response.payload as IDataObject[]) || [];
+
+		if (messages.length === 0) {
+			hasMore = false;
+			break;
+		}
+
+		let addedNew = false;
+		for (const msg of messages) {
+			const id = msg.id as number;
+			if (!seenIds.has(id)) {
+				seenIds.add(id);
+				allMessages.push(msg);
+				addedNew = true;
+			}
+		}
+
+		if (!addedNew) {
+			hasMore = false;
+			break;
+		}
+
+		// Advance cursor past the oldest fetched message to avoid re-fetching it
+		const lastMessage = messages[messages.length - 1];
+		const nextBeforeId = (lastMessage.id as number) - 1;
+		if (nextBeforeId <= 0) {
+			hasMore = false;
+			break;
+		}
+		beforeId = nextBeforeId;
+	}
+
+	return allMessages.map((msg) => ({ json: msg }));
+}
+
+async function createConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const contactId = getContactId.call(context, itemIndex);
+
+	const body: IDataObject = {
+		contact_id: contactId,
+	};
+
+	const inboxId = getInboxId.call(context, itemIndex);
+	if (inboxId) {
+		body.inbox_id = inboxId;
+	}
+
+	const additionalFields = context.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+	Object.assign(body, additionalFields);
+
+	if (typeof body.customAttributes === 'string') {
+		body.custom_attributes = JSON.parse(body.customAttributes as string);
+		delete body.customAttributes;
+	}
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations`,
+		body,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function getConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function listConversations(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const filters = context.getNodeParameter('filters', itemIndex, {}) as IDataObject;
+
+	const query: IDataObject = {};
+	if (filters.status) query.status = filters.status;
+	if (filters.assignee_type) query.assignee_type = filters.assignee_type;
+	if (filters.page) query.page = filters.page;
+	if (filters.q) query.q = filters.q;
+	if (filters.team_id) query.team_id = filters.team_id;
+	if (filters.labels && (filters.labels as string[]).length > 0) {
+		query.labels = (filters.labels as string[]).join(',');
+	}
+
+	const inboxId = getInboxId.call(context, itemIndex);
+	if (inboxId) {
+		query.inbox_id = inboxId;
+	}
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations`,
+		undefined,
+		query,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function toggleConversationStatus(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const status = context.getNodeParameter('status', itemIndex);
+	const snoozeUntilRaw = context.getNodeParameter('snoozeUntil', itemIndex, null) as string | null;
+
+	const body: IDataObject = { status };
+
+	if (snoozeUntilRaw) {
+		const snoozeDate = new Date(snoozeUntilRaw);
+		body.snoozed_until = Math.floor(snoozeDate.getTime() / 1000);
+	}
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/toggle_status`,
+		body,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function assignConversationAgent(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const agentId = context.getNodeParameter('agentId', itemIndex) as number;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/assignments`,
+		{ assignee_id: agentId },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function assignConversationTeam(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const teamId = context.getNodeParameter('teamId', itemIndex) as number;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/assignments`,
+		{ team_id: teamId },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function updateConversationLabels(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const labels = context.getNodeParameter('labels', itemIndex) as string[];
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+		{ labels },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function listConversationLabels(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData[]> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+	) as { payload?: string[] } | string[];
+
+	const labels = Array.isArray(result) ? result : (result.payload || []);
+	return labels.map((label) => ({ json: { label } }));
+}
+
+async function addLabelsToConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const labelsToAdd = context.getNodeParameter('labels', itemIndex) as string[];
+
+	const conversation = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	)) as IDataObject;
+
+	const currentLabels = (conversation.labels as string[]) || [];
+	const newLabels = [...new Set([...currentLabels, ...labelsToAdd])];
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+		{ labels: newLabels },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function removeLabelsFromConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const labelsToRemove = context.getNodeParameter('labels', itemIndex) as string[];
+
+	const conversation = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	)) as IDataObject;
+
+	const currentLabels = (conversation.labels as string[]) || [];
+	const labelsToRemoveSet = new Set(labelsToRemove);
+	const newLabels = currentLabels.filter((label) => !labelsToRemoveSet.has(label));
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+		{ labels: newLabels },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function setConversationCustomAttributes(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const customAttributes = parseCustomAttributes(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/custom_attributes`,
+		{ custom_attributes: customAttributes },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function addCustomAttributesToConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const attributesToAdd = parseCustomAttributes(context, itemIndex);
+
+	const conversation = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	)) as IDataObject;
+
+	const currentAttributes = (conversation.custom_attributes as IDataObject) || {};
+	const mergedAttributes = { ...currentAttributes, ...attributesToAdd };
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/custom_attributes`,
+		{ custom_attributes: mergedAttributes },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function removeCustomAttributesFromConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const attributeKeysToRemove = context.getNodeParameter('customAttributeKeysToRemove', itemIndex) as string[];
+
+	const conversation = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+	)) as IDataObject;
+
+	const currentAttributes = (conversation.custom_attributes as IDataObject) || {};
+	const keysToRemoveSet = new Set(attributeKeysToRemove);
+	const newAttributes: IDataObject = {};
+
+	for (const [key, value] of Object.entries(currentAttributes)) {
+		if (!keysToRemoveSet.has(key)) {
+			newAttributes[key] = value;
+		}
+	}
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/custom_attributes`,
+		{ custom_attributes: newAttributes },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function setConversationPriority(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const priorityValue = context.getNodeParameter('priority', itemIndex) as string;
+
+	const priority = priorityValue === 'null' ? null : priorityValue;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/toggle_priority`,
+		{ priority },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function markConversationUnread(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/unread`,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function updateConversationLastSeen(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/update_last_seen`,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function updateConversationPresence(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const inboxId = getInboxId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const typingStatus = context.getNodeParameter('typingStatus', itemIndex) as string;
+	const isPrivate = context.getNodeParameter('isPrivate', itemIndex) as boolean;
+
+	// Fetch inbox details to check if presence will have an effect
+	const inbox = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/inboxes/${inboxId}`,
+	)) as IDataObject;
+
+	const channelType = inbox.channel_type as string;
+	const provider = (inbox.provider as string) ?? '';
+	const supportedProviders = ['whatsapp_cloud', 'baileys'];
+	const isWhatsApp = channelType === 'Channel::Whatsapp';
+	const isSupportedProvider = supportedProviders.includes(provider);
+	const willHaveEffect = isWhatsApp && isSupportedProvider;
+
+	const body = {
+		typing_status: typingStatus,
+		is_private: isPrivate,
+	};
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/toggle_typing_status`,
+		body,
+	) as IDataObject;
+
+	if (!willHaveEffect) {
+		context.addExecutionHints({
+			message: `Presence status was set, but will not be visible to the contact. This feature only works for WhatsApp inboxes with 'whatsapp_cloud' or 'baileys' providers. Current inbox: channel_type="${channelType}", provider="${provider || 'none'}".`,
+			type: 'warning',
+			location: 'outputPane',
+		});
+	}
+
+	return { json: result };
+}
+
+function calculateDynamicWait(messageContent: string): number {
+	const charsPerSecond = 18.75; // 250 WPM
+	const maxWaitTime = 12;
+	const waitTime = messageContent.length / charsPerSecond;
+	return Math.min(waitTime, maxWaitTime);
+}
+
+interface WaitOptions {
+	accountId: string;
+	conversationId: string;
+	waitSeconds: number;
+	showStatusWhileWaiting: boolean;
+	isZapiInbox: boolean;
+	statusType?: 'typing' | 'recording';
+}
+
+async function waitWithStatusIndicator(
+	context: IExecuteFunctions,
+	options: WaitOptions,
+): Promise<void> {
+	const {
+		accountId,
+		conversationId,
+		waitSeconds,
+		showStatusWhileWaiting,
+		isZapiInbox,
+		statusType = 'typing',
+	} = options;
+
+	if (waitSeconds <= 0) return;
+
+	if (isZapiInbox) {
+		await asyncSleep(waitSeconds * 1000);
+		return;
+	}
+
+	if (!showStatusWhileWaiting) {
+		await asyncSleep(waitSeconds * 1000);
+		return;
+	}
+
+	const setStatus = async (active: boolean) => {
+		let typingStatus: 'on' | 'off' | 'recording';
+		if (!active) {
+			typingStatus = 'off';
+		} else {
+			typingStatus = statusType === 'recording' ? 'recording' : 'on';
+		}
+		await chatwootApiRequest.call(
+			context,
+			'POST',
+			`/api/v1/accounts/${accountId}/conversations/${conversationId}/toggle_typing_status`,
+			{ typing_status: typingStatus },
+		);
+	};
+
+	const refreshInterval = 20000;
+	let remaining = waitSeconds * 1000;
+
+	await setStatus(true);
+	while (remaining > 0) {
+		const sleepTime = Math.min(remaining, refreshInterval);
+		await asyncSleep(sleepTime);
+		remaining -= sleepTime;
+		if (remaining > 0) {
+			await setStatus(true);
+		}
+	}
+	await setStatus(false);
+}
+
+async function detectZapiInbox(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	accountId: string,
+): Promise<boolean> {
+	const inboxId = getInboxId.call(context, itemIndex);
+	if (!inboxId) return false;
+
+	const inbox = (await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/inboxes/${inboxId}`,
+	)) as IDataObject;
+
+	return inbox.provider === 'zapi';
+}
+
+function parseContentAttributesFromInput(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	additionalFields: IDataObject,
+): IDataObject | undefined {
+	if (!additionalFields.content_attributes) {
+		return undefined;
+	}
+
+	const contentAttrsConfig = additionalFields.content_attributes as IDataObject;
+	const values = contentAttrsConfig.values as IDataObject;
+
+	if (!values) {
+		return undefined;
+	}
+
+	const inputMethod = values.inputMethod as string;
+
+	if (inputMethod === 'json') {
+		const jsonString = values.json as string;
+		if (jsonString && jsonString.trim() !== '{}' && jsonString.trim() !== '') {
+			try {
+				return JSON.parse(jsonString);
+			} catch (error) {
+				throw new NodeOperationError(
+					context.getNode(),
+					`Invalid JSON in content attributes: ${(error as Error).message}`,
+				);
+			}
+		}
+	} else if (inputMethod === 'pairs') {
+		const attributes = values.attributes as IDataObject;
+		if (attributes && attributes.attribute) {
+			const pairs = attributes.attribute as Array<{ name: string; value: string }>;
+			if (Array.isArray(pairs) && pairs.length > 0) {
+				const contentAttributes: IDataObject = {};
+				for (const pair of pairs) {
+					if (pair.name && pair.name.trim() !== '') {
+						contentAttributes[pair.name] = pair.value;
+					}
+				}
+				return contentAttributes;
+			}
+		}
+	}
+
+	return undefined;
+}
+
+interface SendMessageOptions {
+	accountId: string;
+	conversationId: string;
+	content: string;
+	isPrivate?: boolean;
+	contentAttributes?: IDataObject;
+	waitSeconds?: number;
+	showTypingWhileWaiting?: boolean;
+	isZapiInbox?: boolean;
+}
+
+async function sendSingleMessage(
+	context: IExecuteFunctions,
+	options: SendMessageOptions,
+): Promise<IDataObject> {
+	const {
+		accountId,
+		conversationId,
+		content,
+		isPrivate,
+		contentAttributes,
+		waitSeconds = 0,
+		showTypingWhileWaiting = false,
+		isZapiInbox = false,
+	} = options;
+
+	if (isZapiInbox && waitSeconds > 0 && showTypingWhileWaiting) {
+		const msgContentAttrs: IDataObject = contentAttributes ? { ...contentAttributes } : {};
+		msgContentAttrs.zapi_args = { delayTyping: Math.round(waitSeconds) };
+
+		const body: IDataObject = {
+			content,
+			content_attributes: msgContentAttrs,
+		};
+		if (isPrivate) {
+			body.private = isPrivate;
+		}
+
+		const result = (await chatwootApiRequest.call(
+			context,
+			'POST',
+			`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+			body,
+		)) as IDataObject;
+
+		await asyncSleep(waitSeconds * 1000);
+		return result;
+	}
+
+	await waitWithStatusIndicator(context, {
+		accountId,
+		conversationId,
+		waitSeconds,
+		showStatusWhileWaiting: showTypingWhileWaiting,
+		isZapiInbox,
+		statusType: 'typing',
+	});
+
+	const body: IDataObject = { content };
+	if (isPrivate) {
+		body.private = isPrivate;
+	}
+	if (contentAttributes && Object.keys(contentAttributes).length > 0) {
+		body.content_attributes = contentAttributes;
+	}
+
+	return (await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+		body,
+	)) as IDataObject;
+}
+
+async function sendSplitMessages(
+	context: IExecuteFunctions,
+	itemIndex: number,
+	accountId: string,
+	conversationId: string,
+	content: string,
+	additionalFields: IDataObject,
+	contentAttributes: IDataObject | undefined,
+): Promise<INodeExecutionData> {
+	let splitChar = (additionalFields.split_character as string) ?? '\\n\\n';
+	splitChar = splitChar
+		.replace(/\\n/g, '\n')
+		.replace(/\\t/g, '\t')
+		.replace(/\\r/g, '\r');
+
+	const messages = content.split(splitChar).filter((msg: string) => msg.trim() !== '');
+	const responses: IDataObject[] = [];
+
+	const waitMode = (additionalFields.wait_before_sending as string) ?? 'none';
+	const fixedWaitTime = (additionalFields.wait_time_seconds as number) ?? 2;
+	const showTypingWhileWaiting = (additionalFields.typing_while_waiting as boolean) ?? true;
+
+	const isZapiInbox = waitMode !== 'none' && showTypingWhileWaiting
+		? await detectZapiInbox(context, itemIndex, accountId)
+		: false;
+
+	for (const message of messages) {
+		let waitSeconds = 0;
+		if (waitMode !== 'none') {
+			waitSeconds = waitMode === 'fixed' ? fixedWaitTime : calculateDynamicWait(message);
+		}
+
+		const result = await sendSingleMessage(context, {
+			accountId,
+			conversationId,
+			content: message,
+			isPrivate: additionalFields.private as boolean,
+			contentAttributes,
+			waitSeconds,
+			showTypingWhileWaiting,
+			isZapiInbox,
+		});
+
+		responses.push(result);
+	}
+
+	return { json: { requests: responses } };
+}
+
+async function sendMessageToConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const content = context.getNodeParameter('content', itemIndex, '') as string;
+	const additionalFields = context.getNodeParameter('additionalFields', itemIndex, {}) as IDataObject;
+
+	const replyToParam = context.getNodeParameter('replyToMessageId', itemIndex, { mode: 'list', value: '' }) as { mode: string; value: string };
+	const replyToMessageId = replyToParam.value ? Number(replyToParam.value) : undefined;
+
+	const isReaction = additionalFields.is_reaction as boolean;
+	if (!content && !isReaction) {
+		throw new NodeOperationError(
+			context.getNode(),
+			'Content is required.',
+			{ itemIndex },
+		);
+	}
+
+	let contentAttributes = parseContentAttributesFromInput(context, itemIndex, additionalFields);
+
+	if (replyToMessageId) {
+		contentAttributes = contentAttributes ?? {};
+		contentAttributes.in_reply_to = replyToMessageId;
+	}
+
+	if (isReaction) {
+		if (!replyToMessageId) {
+			throw new NodeOperationError(
+				context.getNode(),
+				'Reply To is required when Is Reaction is enabled. A reaction must be in response to a specific message.',
+				{ itemIndex },
+			);
+		}
+		contentAttributes = contentAttributes ?? {};
+		contentAttributes.is_reaction = true;
+	}
+
+	if (additionalFields.split_message) {
+		return sendSplitMessages(
+			context,
+			itemIndex,
+			accountId,
+			conversationId,
+			content,
+			additionalFields,
+			contentAttributes,
+		);
+	}
+
+	const waitMode = (additionalFields.wait_before_sending as string) ?? 'none';
+	const fixedWaitTime = (additionalFields.wait_time_seconds as number) ?? 5;
+	const showTypingWhileWaiting = (additionalFields.typing_while_waiting as boolean) ?? true;
+
+	let waitSeconds = 0;
+	if (waitMode !== 'none') {
+		waitSeconds = waitMode === 'fixed' ? fixedWaitTime : calculateDynamicWait(content);
+	}
+
+	const isZapiInbox = waitMode !== 'none' && showTypingWhileWaiting
+		? await detectZapiInbox(context, itemIndex, accountId)
+		: false;
+
+	const result = await sendSingleMessage(context, {
+		accountId,
+		conversationId,
+		content,
+		isPrivate: additionalFields.private as boolean,
+		contentAttributes,
+		waitSeconds,
+		showTypingWhileWaiting,
+		isZapiInbox,
+	});
+
+	return { json: result };
+}
+
+async function sendTemplateToConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const inboxId = getInboxId.call(context, itemIndex);
+	const templateName = getTemplateName.call(context, itemIndex);
+
+	// Fetch inbox to get template details
+	const inbox = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/inboxes/${inboxId}`,
+	) as IDataObject;
+
+	const messageTemplates = (inbox.message_templates as IDataObject[]) || [];
+	const template = messageTemplates.find((t: IDataObject) => t.name === templateName) as IDataObject | undefined;
+
+	if (!template) {
+		throw new NodeOperationError(
+			context.getNode(),
+			`Template "${templateName}" not found in inbox ${inboxId}`,
+			{ itemIndex },
+		);
+	}
+
+	// Extract template details
+	const category = template.category as string;
+	const language = template.language as string;
+	const templateComponents = (template.components as IDataObject[]) || [];
+
+	// Parse template to determine required parameters
+	const requiredParams = analyzeTemplateRequirements(templateComponents);
+
+	// Process user-provided components
+	const componentsData = context.getNodeParameter('components', itemIndex, {}) as IDataObject;
+	const userComponents = (componentsData.component as IDataObject[]) || [];
+
+	// Build processed_params object from components
+	const processedParams: IDataObject = {};
+	const providedParams = {
+		bodyCount: 0,
+		headerCount: 0,
+		buttonIndices: new Set<number>(),
+	};
+
+	// Track body parameters for rendering the message content
+	const bodyParamValues: string[] = [];
+	const emptyBodyParams: number[] = [];
+	const emptyHeaderParams: number[] = [];
+	const emptyButtonParams: number[] = [];
+
+	for (const comp of userComponents) {
+		const compType = comp.type as string;
+
+		if (compType === 'body') {
+			const bodyParams = comp.bodyParameters as IDataObject;
+			const params = (bodyParams?.parameter as IDataObject[]) || [];
+			if (params.length > 0) {
+				const bodyObj: IDataObject = {};
+				for (let i = 0; i < params.length; i++) {
+					const param = params[i];
+					const paramType = param.type as string;
+
+					if (paramType === 'text') {
+						const textValue = (param.text as string || '').trim();
+						if (!textValue) {
+							emptyBodyParams.push(i + 1);
+						}
+						bodyObj[String(i + 1)] = textValue;
+						bodyParamValues.push(textValue);
+					} else if (paramType === 'date_time') {
+						const dateValue = (param.date_time as string || '').trim();
+						if (!dateValue) {
+							emptyBodyParams.push(i + 1);
+						}
+						bodyObj[String(i + 1)] = dateValue;
+						bodyParamValues.push(dateValue);
+					}
+				}
+				processedParams.body = bodyObj;
+				providedParams.bodyCount = params.length;
+			}
+		} else if (compType === 'header') {
+			const headerParams = comp.headerParameters as IDataObject;
+			const params = (headerParams?.parameter as IDataObject[]) || [];
+			if (params.length > 0) {
+				const param = params[0]; // Header typically has one parameter
+				const paramType = param.type as string;
+
+				if (paramType === 'text') {
+					const textValue = (param.text as string || '').trim();
+					if (!textValue) {
+						emptyHeaderParams.push(1);
+					}
+					processedParams.header = { text: textValue };
+				} else if (['image', 'video', 'document'].includes(paramType)) {
+					const mediaUrl = (param.mediaUrl as string || '').trim();
+					if (!mediaUrl) {
+						emptyHeaderParams.push(1);
+					}
+					processedParams.header = {
+						media_url: mediaUrl,
+						media_type: paramType,
+					};
+				}
+				providedParams.headerCount = 1;
+			}
+		} else if (compType === 'button') {
+			const buttonIndex = comp.index as number;
+			const subType = comp.sub_type as string;
+			const buttonParameter = (comp.buttonParameter as string || '').trim();
+
+			if (!buttonParameter) {
+				emptyButtonParams.push(buttonIndex);
+			}
+
+			if (!processedParams.buttons) {
+				processedParams.buttons = [];
+			}
+
+			(processedParams.buttons as IDataObject[]).push({
+				type: subType,
+				index: buttonIndex,
+				parameter: buttonParameter,
+			});
+
+			providedParams.buttonIndices.add(buttonIndex);
+		}
+	}
+
+	// Validate required parameters
+	const validationErrors: string[] = [];
+
+	if (requiredParams.bodyParamCount > 0 && providedParams.bodyCount < requiredParams.bodyParamCount) {
+		validationErrors.push(
+			`Body requires ${requiredParams.bodyParamCount} parameter(s), but only ${providedParams.bodyCount} provided`,
+		);
+	}
+
+	// Check for empty body parameters
+	if (emptyBodyParams.length > 0) {
+		validationErrors.push(
+			`Body parameter(s) at position(s) ${emptyBodyParams.join(', ')} are empty`,
+		);
+	}
+
+	if (requiredParams.headerRequiresParam && providedParams.headerCount === 0) {
+		validationErrors.push(
+			`Header requires a parameter (${requiredParams.headerFormat || 'media/text'})`,
+		);
+	}
+
+	// Check for empty header parameters
+	if (emptyHeaderParams.length > 0) {
+		validationErrors.push(
+			`Header parameter is empty`,
+		);
+	}
+
+	for (const idx of requiredParams.buttonIndicesRequiringParams) {
+		if (!providedParams.buttonIndices.has(idx)) {
+			validationErrors.push(
+				`Button at index ${idx} (button #${idx + 1}) requires a parameter`,
+			);
+		}
+	}
+
+	// Check for empty button parameters
+	if (emptyButtonParams.length > 0) {
+		const indexList = emptyButtonParams.map((i) => `${i} (#${i + 1})`).join(', ');
+		validationErrors.push(`Button parameter(s) at index ${indexList} are empty`);
+	}
+
+	if (validationErrors.length > 0) {
+		throw new NodeOperationError(
+			context.getNode(),
+			`Template validation failed:\n- ${validationErrors.join('\n- ')}`,
+			{ itemIndex },
+		);
+	}
+
+	// Render message content by substituting placeholders in the template body
+	let messageContent = '';
+	const bodyComponent = templateComponents.find((c: IDataObject) => c.type === 'BODY');
+	if (bodyComponent && bodyComponent.text) {
+		messageContent = bodyComponent.text as string;
+		// Replace {{1}}, {{2}}, etc. with actual values
+		for (let i = 0; i < bodyParamValues.length; i++) {
+			messageContent = messageContent.replace(new RegExp(`\\{\\{${i + 1}\\}\\}`, 'g'), bodyParamValues[i]);
+		}
+	}
+
+	// Fallback if no body or no substitution was done
+	if (!messageContent) {
+		messageContent = `Template: ${templateName}`;
+	}
+
+	// Build the request body
+	const body: IDataObject = {
+		content: messageContent,
+		message_type: 'outgoing',
+		template_params: {
+			name: templateName,
+			category,
+			language,
+			processed_params: processedParams,
+		},
+	};
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'POST',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+		body,
+	) as IDataObject;
+
+	return { json: result };
+}
+
+/**
+ * Analyze template components to determine required parameters
+ */
+function analyzeTemplateRequirements(components: IDataObject[]): {
+	bodyParamCount: number;
+	headerRequiresParam: boolean;
+	headerFormat: string | null;
+	buttonIndicesRequiringParams: number[];
+} {
+	let bodyParamCount = 0;
+	let headerRequiresParam = false;
+	let headerFormat: string | null = null;
+	const buttonIndicesRequiringParams: number[] = [];
+
+	for (const component of components) {
+		const type = component.type as string;
+
+		if (type === 'BODY') {
+			// Count {{n}} placeholders in body text
+			const text = component.text as string || '';
+			const matches = text.match(/\{\{\d+\}\}/g) || [];
+			bodyParamCount = matches.length;
+		} else if (type === 'HEADER') {
+			const format = component.format as string;
+			if (format && format !== 'TEXT') {
+				// IMAGE, VIDEO, DOCUMENT headers require media
+				headerRequiresParam = true;
+				headerFormat = format.toLowerCase();
+			} else if (format === 'TEXT') {
+				// Check if header text has placeholders
+				const text = component.text as string || '';
+				if (text.includes('{{')) {
+					headerRequiresParam = true;
+					headerFormat = 'text';
+				}
+			}
+		} else if (type === 'BUTTONS') {
+			const buttons = (component.buttons as IDataObject[]) || [];
+			for (let i = 0; i < buttons.length; i++) {
+				const btn = buttons[i];
+				// URL buttons with {{1}} require a parameter
+				if (btn.type === 'URL' && (btn.url as string)?.includes('{{')) {
+					buttonIndicesRequiringParams.push(i);
+				}
+				// COPY_CODE buttons require a parameter
+				if (btn.type === 'COPY_CODE') {
+					buttonIndicesRequiringParams.push(i);
+				}
+			}
+		}
+	}
+
+	return {
+		bodyParamCount,
+		headerRequiresParam,
+		headerFormat,
+		buttonIndicesRequiringParams,
+	};
+}
+
+async function sendFileToConversation(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+	const binaryPropertyName = context.getNodeParameter('binaryPropertyName', itemIndex) as string;
+	const isRecordedAudio = context.getNodeParameter('isRecordedAudio', itemIndex, false) as boolean;
+	const caption = context.getNodeParameter('fileCaption', itemIndex, '') as string;
+	const options = context.getNodeParameter('sendFileOptions', itemIndex, {}) as IDataObject;
+
+	const binaryData = context.helpers.assertBinaryData(itemIndex, binaryPropertyName);
+	const fileName = binaryData.fileName || 'file';
+
+	const waitMode = (options.wait_before_sending as string) ?? 'none';
+	const waitSeconds = (options.wait_time_seconds as number) ?? 5;
+	const showStatusWhileWaiting = (options.status_while_waiting as boolean) ?? true;
+	const statusType = isRecordedAudio ? 'recording' : 'typing';
+
+	const isZapiInbox = await detectZapiInbox(context, itemIndex, accountId);
+
+	let contentAttributes: IDataObject | undefined;
+
+	if (waitMode !== 'none' && waitSeconds > 0) {
+		if (isZapiInbox && showStatusWhileWaiting) {
+			contentAttributes = {
+				zapi_args: {
+					delayTyping: waitSeconds,
+				},
+			};
+		} else {
+			await waitWithStatusIndicator(context, {
+				accountId,
+				conversationId,
+				waitSeconds,
+				showStatusWhileWaiting,
+				isZapiInbox,
+				statusType,
+			});
+		}
+	}
+
+	const credentials = await context.getCredentials('singulHubChatwootApi');
+	let baseURL = credentials.url as string;
+	if (baseURL.endsWith('/')) {
+		baseURL = baseURL.slice(0, -1);
+	}
+
+	const buffer = await context.helpers.getBinaryDataBuffer(itemIndex, binaryPropertyName);
+
+	const formData: IDataObject = {
+		'attachments[]': {
+			value: buffer,
+			options: {
+				filename: fileName,
+				contentType: binaryData.mimeType,
+			},
+		},
+	};
+
+	if (caption && !isRecordedAudio) {
+		formData.content = caption;
+	}
+
+	if (options.private) {
+		formData.private = 'true';
+	}
+
+	if (isRecordedAudio) {
+		formData.is_recorded_audio = JSON.stringify([fileName]);
+	}
+
+	if (contentAttributes && Object.keys(contentAttributes).length > 0) {
+		formData.content_attributes = JSON.stringify(contentAttributes);
+	}
+
+	// Add attachments metadata if provided
+	const attachmentMetadata = options.attachmentMetadata as string | undefined;
+	if (attachmentMetadata) {
+		const metaObj = JSON.parse(attachmentMetadata) as IDataObject;
+		for (const [key, value] of Object.entries(metaObj)) {
+			formData[`attachments_metadata[${fileName}][${key}]`] = String(value);
+		}
+	}
+
+	const result = await context.helpers.requestWithAuthentication.call(
+		context,
+		'singulHubChatwootApi',
+		{
+			method: 'POST',
+			uri: `${baseURL}/api/v1/accounts/${accountId}/conversations/${conversationId}/messages`,
+			formData,
+			json: true,
+		},
+	);
+
+	if (isZapiInbox && waitMode !== 'none' && waitSeconds > 0 && showStatusWhileWaiting) {
+		await asyncSleep(waitSeconds * 1000);
+	}
+
+	return { json: result as IDataObject };
+}
+
+async function listConversationAttachments(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData[]> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const response = await chatwootApiRequest.call(
+		context,
+		'GET',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/attachments`,
+	) as { payload?: IDataObject[] };
+
+	const attachments = response.payload || [];
+
+	return attachments.map((attachment) => ({ json: attachment }));
+}
+
+async function updateAttachmentMeta(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const messageIdParam = context.getNodeParameter('messageId', itemIndex) as { mode: string; value: string };
+	const messageId = messageIdParam.value;
+
+	const attachmentIdParam = context.getNodeParameter('attachmentId', itemIndex) as { mode: string; value: string };
+	const attachmentId = attachmentIdParam.value;
+
+	const metaValue = context.getNodeParameter('attachmentMeta', itemIndex) as string;
+	const meta = JSON.parse(metaValue) as IDataObject;
+
+	const result = await chatwootApiRequest.call(
+		context,
+		'PATCH',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages/${messageId}/attachments/${attachmentId}`,
+		{ meta },
+	) as IDataObject;
+
+	return { json: result };
+}
+
+async function downloadAttachment(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const downloadMode = context.getNodeParameter('downloadMode', itemIndex) as string;
+	const binaryPropertyName = context.getNodeParameter('binaryPropertyName', itemIndex, 'data') as string;
+
+	let fileUrl: string;
+	let attachment: IDataObject | undefined;
+
+	if (downloadMode === 'byUrl') {
+		fileUrl = context.getNodeParameter('attachmentUrl', itemIndex) as string;
+		if (!fileUrl) {
+			throw new NodeOperationError(
+				context.getNode(),
+				'Attachment URL is required',
+				{ itemIndex },
+			);
+		}
+
+		const credentials = await context.getCredentials('singulHubChatwootApi');
+		const credentialUrl = new URL(credentials.url as string);
+		const attachmentUrl = new URL(fileUrl);
+
+		if (attachmentUrl.hostname !== credentialUrl.hostname) {
+			const allowExternalUrls = context.getNodeParameter('allowExternalUrls', itemIndex, false) as boolean;
+
+			if (!allowExternalUrls) {
+				throw new NodeOperationError(
+					context.getNode(),
+					`URL domain "${attachmentUrl.hostname}" does not match the configured Chatwoot instance "${credentialUrl.hostname}". Enable "Allow External URLs" to download from external sources.`,
+					{ itemIndex },
+				);
+			}
+
+			context.addExecutionHints({
+				message: `Downloaded from external domain "${attachmentUrl.hostname}" which differs from the configured Chatwoot instance. Ensure this content is from a trusted source.`,
+				type: 'warning',
+				location: 'outputPane',
+			});
+		}
+	} else {
+		const accountId = getAccountId.call(context, itemIndex);
+		const conversationId = getConversationId.call(context, itemIndex);
+
+		const attachmentIdParam = context.getNodeParameter('attachmentId', itemIndex) as { mode: string; value: string };
+		const attachmentId = String(attachmentIdParam.value);
+
+		const response = await chatwootApiRequest.call(
+			context,
+			'GET',
+			`/api/v1/accounts/${accountId}/conversations/${conversationId}/attachments`,
+		) as { payload?: IDataObject[] };
+
+		const attachments = response.payload || [];
+
+		attachment = attachments.find(
+			(a) => String((a as IDataObject).id) === attachmentId,
+		) as IDataObject | undefined;
+
+		if (!attachment) {
+			throw new NodeOperationError(
+				context.getNode(),
+				`Attachment with ID ${attachmentId} not found in conversation`,
+				{ itemIndex },
+			);
+		}
+
+		fileUrl = attachment.data_url as string;
+		if (!fileUrl) {
+			throw new NodeOperationError(
+				context.getNode(),
+				'Attachment does not have a download URL',
+				{ itemIndex },
+			);
+		}
+	}
+
+	const fileResponse = await context.helpers.httpRequest({
+		method: 'GET',
+		url: fileUrl,
+		encoding: 'arraybuffer',
+		returnFullResponse: true,
+	});
+
+	// Extract filename from Content-Disposition header, URL query param, or URL path
+	let fileName = 'attachment';
+	const contentDisposition = fileResponse.headers?.['content-disposition'] as string | undefined;
+	if (contentDisposition) {
+		const filenameMatch = contentDisposition.match(/filename\*?=(?:UTF-8'')?["']?([^"';\n]+)["']?/i);
+		if (filenameMatch) {
+			fileName = decodeURIComponent(filenameMatch[1]);
+		}
+	}
+	if (fileName === 'attachment') {
+		try {
+			const urlObj = new URL(fileUrl);
+			const filenameParam = urlObj.searchParams.get('filename')
+				|| urlObj.searchParams.get('response-content-disposition')?.match(/filename="([^"]+)"/)?.[1];
+			if (filenameParam) {
+				fileName = decodeURIComponent(filenameParam);
+			} else {
+				fileName = decodeURIComponent(urlObj.pathname.split('/').pop() || 'attachment');
+			}
+		} catch {
+			fileName = decodeURIComponent(fileUrl.split('/').pop()?.split('?')[0] || 'attachment');
+		}
+	}
+
+	const mimeType = (attachment?.file_type as string)
+		|| (fileResponse.headers?.['content-type'] as string)?.split(';')[0]
+		|| 'application/octet-stream';
+
+	const binaryData = await context.helpers.prepareBinaryData(
+		Buffer.from(fileResponse.body as ArrayBuffer),
+		fileName,
+		mimeType,
+	);
+
+	return {
+		json: attachment ?? { url: fileUrl },
+		binary: { [binaryPropertyName]: binaryData },
+	};
+}
+
+async function deleteMessage(
+	context: IExecuteFunctions,
+	itemIndex: number,
+): Promise<INodeExecutionData> {
+	const accountId = getAccountId.call(context, itemIndex);
+	const conversationId = getConversationId.call(context, itemIndex);
+
+	const messageIdParam = context.getNodeParameter('messageId', itemIndex) as { mode: string; value: string };
+	const messageId = messageIdParam.value;
+
+	await chatwootApiRequest.call(
+		context,
+		'DELETE',
+		`/api/v1/accounts/${accountId}/conversations/${conversationId}/messages/${messageId}`,
+	);
+
+	return {
+		json: {
+			success: true,
+			messageId: Number(messageId),
+			deleted: true,
+		},
+	};
+}
