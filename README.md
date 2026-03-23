@@ -56,6 +56,7 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | Operation                 | Description                                                                        |
 | ------------------------- | ---------------------------------------------------------------------------------- |
 | Create                    | Create a new contact with name, phone (E.164 format), email, and custom attributes |
+| Upsert                    | Create or update a contact intelligently based on Email or Phone Number            |
 | Get                       | Get contact information                                                            |
 | Update                    | Update contact details                                                             |
 | Delete                    | Delete a contact                                                                   |
@@ -76,6 +77,7 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | List Messages              | List messages in a conversation with pagination      |
 | List Attachments           | List attachments in a conversation                   |
 | Assign Agent               | Assign an agent to a conversation                    |
+| Auto-Assign Agent          | Auto-assign an agent to a conversation (Round Robin) |
 | Assign Team                | Assign a team to a conversation                      |
 | Add Labels                 | Append labels to a conversation (keeps existing)     |
 | Remove Labels              | Remove specific labels from a conversation           |
@@ -83,6 +85,7 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | Toggle Status              | Change status (open, pending, resolved, snoozed)     |
 | Set Priority               | Set conversation priority                            |
 | Add Custom Attributes      | Add custom attributes (keeps existing)               |
+| Update Custom Attributes (Batch) | Update multiple custom attributes via JSON payload |
 | Remove Custom Attributes   | Remove specific custom attributes                    |
 | Set Custom Attributes      | Replace all custom attributes                        |
 | Update Last Seen           | Update the last seen timestamp                       |
@@ -179,7 +182,7 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 
 ## Trigger Events
 
-The **Chatwoot SingulHub Trigger** node supports the following webhook events:
+The **Chatwoot SingulHub Trigger** node supports the following webhook events. It also includes built-in filters to **Ignore Bot Messages** and **Ignore Private Notes**, preventing unnecessary N8N workflow executions and saving resources.
 
 | Event                       | Description                                      |
 | --------------------------- | ------------------------------------------------ |
@@ -315,10 +318,9 @@ pnpm install
 
 ## Authors
 
-**SingulHub Team** - [SingulHub](https://singulhub.com.br)
+**SingulHub Team** - contato@singulhub.com.br | [SingulHub](https://singulhub.com.br)
 
 
 
 ---
 
-Made with ?? by [SingulHub](https://singulhub.com.br)
