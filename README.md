@@ -51,6 +51,18 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | --------- | --------------------------------------------------------------- |
 | Get       | Retrieve detailed information about a specific Chatwoot account |
 
+### Automation
+
+| Operation | Description                                     |
+| --------- | ----------------------------------------------- |
+| Manage    | Manage automation rules (List, Get, Create, Update, Delete) |
+
+### Canned Response
+
+| Operation | Description                                     |
+| --------- | ----------------------------------------------- |
+| Manage    | Manage canned responses (quick replies)         |
+
 ### Contact
 
 | Operation                 | Description                                                                        |
@@ -92,6 +104,8 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | Update Presence            | Set presence status (off, typing, recording)         |
 | Mark Unread                | Mark conversation as unread                          |
 | Update Attachment Metadata | Update metadata on attachments (e.g., transcription) |
+| Create Note                | Create a private note in a conversation              |
+| Bulk Action                | Perform an action on multiple conversations at once  |
 
 ### Custom Attribute
 
@@ -100,6 +114,12 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | Create    | Create a custom attribute definition (text, number, date, list, checkbox, link) |
 | List      | List all custom attribute definitions                                           |
 | Delete    | Delete a custom attribute definition                                            |
+
+### Help Center
+
+| Operation | Description                                     |
+| --------- | ----------------------------------------------- |
+| Manage    | Manage Help Center portals, categories, and articles |
 
 ### Inbox
 
@@ -160,6 +180,12 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | --------- | ---------------------------------------- |
 | Get       | Get the current user profile information |
 
+### Report
+
+| Operation | Description                                     |
+| --------- | ----------------------------------------------- |
+| Access    | Access account, agent, inbox, and team reports  |
+
 ### Scheduled Message
 
 | Operation | Description                                        |
@@ -179,6 +205,12 @@ A webhook trigger node that listens for Chatwoot events. Automatically registers
 | Get Team Members | Get all members of a team   |
 | Assign Agent     | Assign an agent to a team   |
 | Unassign Agent   | Remove an agent from a team |
+
+### Webhook
+
+| Operation | Description                                     |
+| --------- | ----------------------------------------------- |
+| Manage    | Manage webhooks (List, Get, Create, Update, Delete) |
 
 ## Trigger Events
 
@@ -200,6 +232,7 @@ The **Chatwoot SingulHub Trigger** node supports the following webhook events. I
 | Kanban Task Created ⚡      | Triggered when a Kanban task is created          |
 | Kanban Task Updated ⚡      | Triggered when a Kanban task is updated          |
 | Kanban Task Deleted ⚡      | Triggered when a Kanban task is deleted          |
+| Kanban Item Moved ⚡        | Triggered when a Kanban item is moved            |
 | Provider Event Received ⚡  | Triggered when a provider event is received      |
 | Live Chat Widget Opened     | Triggered when a user opens the live chat widget |
 
